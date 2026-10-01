@@ -1,0 +1,6 @@
+{
+  "name": "冒険者と錬金術師",
+  "description": "若き冒険者姉妹レオとプリムラを育てる成長型テキストローグライクRPG。採取・錬金術・施設強化・ダンジョン探索で伝説の迷宮踏破を目指す！",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

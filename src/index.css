@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 0.5rem);
+  }
+}
+
+/* Custom crisp gaming scrollbars */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(180, 83, 9, 0.3);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(180, 83, 9, 0.5);
+}
+
+body {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
