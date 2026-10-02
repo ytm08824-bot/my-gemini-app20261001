@@ -4,10 +4,10 @@ export type StatKey =
   | 'atk'
   | 'def'
   | 'observation'   // 観察力 (宝箱・採取)
-  | 'endurance'     // 頑健 (耐久・体力計算)
-  | 'dexterity'     // 身体技巧力 (罠解除・仕掛け)
+  | 'endurance'     // 頑健 (耐久・体力計算・状態異常耐性)
+  | 'dexterity'     // 身体技巧力 (罠解除・仕掛け・会心)
   | 'mobility'      // 身体操作力 (回避・体力計算)
-  | 'knowledge'     // 知識 (弱点・古代文字)
+  | 'knowledge'     // 知識 (弱点・古代文字・解毒)
   | 'social';       // 社交 (交渉・買物)
 
 export interface LeoStats {
@@ -27,7 +27,85 @@ export interface LeoStats {
   social: number;
 }
 
-export type ItemType = 'material' | 'potion' | 'offensive' | 'equipment' | 'valuable';
+// 携帯ポーチカテゴリ
+export type PouchCategory = 'potion' | 'food' | 'consumable' | 'gadget';
+
+export interface PouchCapacity {
+  potion: number;     // ポーションベルト (最大10)
+  food: number;       // 食糧ポシェット (最大8)
+  consumable: number; // アイテムポーチ (最大8)
+  gadget: number;     // ガジェットポーチ (最大3)
+}
+
+export interface PouchState {
+  potion: (string | null)[];
+  food: (string | null)[];
+  consumable: (string | null)[];
+  gadget: (string | null)[];
+}
+
+// 装備型ポーチセット
+export interface PouchGear {
+  id: string;
+  name: string;
+  description: string;
+  capacity: PouchCapacity;
+  buyPrice: number;
+  sellPrice: number;
+  requiredDungeonsCleared: number;
+  icon: string;
+}
+
+// 状態異常種別
+export type AilmentType = 'poison' | 'paralysis' | 'frostbite';
+
+export interface StatusAilment {
+  type: AilmentType;
+  level: number;
+  name: string;
+  description: string;
+}
+
+// 特技（Perk）
+export interface Perk {
+  id: string;
+  name: string;
+  description: string;
+  level: number;
+  maxLevel: number;
+  requiredStats: Partial<Record<StatKey, number>>;
+  requiredExp: number;
+  effectType: 'strong_strike' | 'parry' | 'evasion' | 'detox' | 'scavenger' | 'stamina_conserve' | string;
+  icon: string;
+}
+
+// 依頼（Quest）
+export interface Quest {
+  id: string;
+  title: string;
+  client: string;
+  description: string;
+  targetItemId: string;
+  targetCount: number;
+  rewardGold: number;
+  rewardRp?: number;
+  rewardItems?: { itemId: string; count: number }[];
+  isCompleted: boolean;
+  isClaimed: boolean;
+  requiredDungeonsCleared?: number;
+  isRepeatable?: boolean;
+}
+
+export type ItemType =
+  | 'material'
+  | 'potion'
+  | 'food'
+  | 'consumable'
+  | 'gadget'
+  | 'equipment'
+  | 'valuable'
+  | 'pouch_gear'
+  | 'offensive'; // backwards compat
 
 export type EquipmentSlot = 'weapon' | 'armor' | 'accessory';
 
@@ -36,11 +114,18 @@ export interface Item {
   name: string;
   description: string;
   type: ItemType;
+  pouchCategory?: PouchCategory;
   icon: string;
   rarity: 1 | 2 | 3 | 4;
   sellPrice: number;
   buyPrice?: number;
   effectValue?: number;
+  hpRecovery?: number;
+  staminaRecovery?: number;
+  cureAilments?: AilmentType[];
+  gadgetType?: string;
+  gadgetBonus?: { stat?: StatKey; value?: number; special?: string };
+  pouchCapacity?: PouchCapacity;
   equipSlot?: EquipmentSlot;
   equipStats?: Partial<Record<StatKey, number>>;
 }
@@ -58,6 +143,7 @@ export interface Recipe {
   category: 'recovery' | 'battle' | 'valuable' | 'equipment';
   researchCostRp: number;
   isResearched: boolean;
+  isDiscovered?: boolean; // 素材発見連動: 必要素材を入手すると研究可能に
   ingredients: { itemId: string; count: number }[];
   timeDays: number; // 調合所要日数 (最低1日。冒険1回/1日経過で完成)
 }
@@ -91,6 +177,7 @@ export interface Enemy {
   goldReward: number;
   dropItems: { itemId: string; chance: number }[];
   icon: string;
+  inflictAilment?: { type: AilmentType; chance: number; level: number };
 }
 
 export type DiceResultType = 'critical_success' | 'success' | 'partial_failure' | 'failure' | 'critical_failure';
@@ -109,6 +196,7 @@ export interface Gimmick {
   failureDamage?: number;
   criticalSuccessBonus?: string;
   criticalFailureDamage?: number;
+  failureAilment?: { type: AilmentType; level: number };
 }
 
 export interface GatheringField {
@@ -122,6 +210,7 @@ export interface GatheringField {
   harvestPool: { itemId: string; weight: number }[];
   bgGradient: string;
   icon: string;
+  requiredDungeonsCleared?: number;
 }
 
 export interface DungeonFloor {
@@ -138,6 +227,7 @@ export interface Dungeon {
   id: string;
   name: string;
   description: string;
+  rumorDescription?: string; // 未踏破時の伝聞テキスト
   recommendedLevel: number;
   floorsCount: number;
   floors: DungeonFloor[];
@@ -151,7 +241,7 @@ export interface Dungeon {
 export interface LogEntry {
   id: string;
   text: string;
-  type: 'info' | 'battle' | 'harvest' | 'gimmick' | 'heal' | 'danger' | 'success';
+  type: 'info' | 'battle' | 'harvest' | 'gimmick' | 'heal' | 'danger' | 'success' | 'perk' | 'ailment' | 'gadget';
   timestamp: number;
 }
 
@@ -165,7 +255,13 @@ export interface GameState {
     armor: string | null;
     accessory: string | null;
   };
-  pouch: (string | null)[]; // Max 4 slots for items to carry
+  equippedPouch: string; // PouchGear id (初期は 'pouch_starter')
+  ownedPouchGears: string[];
+  pouch: PouchState; // 4カテゴリ構成
+  perks: Perk[];
+  quests: Quest[];
+  unlockedMaterials: string[];
+  shopStock: Record<string, number>; // itemId -> remaining stock for the day
   inventory: Record<string, number>; // itemId -> count
   recipes: Recipe[];
   alchemySlots: AlchemySlot[];

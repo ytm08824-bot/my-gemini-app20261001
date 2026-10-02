@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
 import { StatKey, EquipmentSlot } from '../types/game';
-import { ITEMS } from '../data/initialData';
+import { ITEMS, POUCH_GEARS } from '../data/initialData';
 import { ItemIcon } from './ItemIcon';
 import {
   Swords,
@@ -18,6 +18,9 @@ import {
   Plus,
   ChevronRight,
   X,
+  Briefcase,
+  Award,
+  Check,
 } from 'lucide-react';
 import { sound } from '../utils/sound';
 
@@ -29,9 +32,15 @@ export const StatusTab: React.FC = () => {
     getStatUpgradeCost,
     equipItem,
     unequipItem,
+    equipPouchGear,
+    learnPerk,
   } = useGame();
 
   const [activeEquipSlot, setActiveEquipSlot] = useState<EquipmentSlot | null>(null);
+  const [showPouchPicker, setShowPouchPicker] = useState<boolean>(false);
+
+  const currentPouchGear =
+    POUCH_GEARS[state.equippedPouch] || POUCH_GEARS['pouch_starter'];
 
   const statsConfig: {
     key: StatKey;
@@ -174,7 +183,7 @@ export const StatusTab: React.FC = () => {
           <span className="text-[11px] text-slate-500">タップで装備変更</span>
         </div>
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {(['weapon', 'armor', 'accessory'] as const).map((slotKey) => {
             const equippedId = state.equipped[slotKey];
             const item = equippedId ? ITEMS[equippedId] : null;
@@ -210,6 +219,141 @@ export const StatusTab: React.FC = () => {
                   </div>
                 </div>
               </button>
+            );
+          })}
+
+          {/* 4th slot: Pouch Gear */}
+          <button
+            onClick={() => {
+              sound.playTap();
+              setShowPouchPicker(true);
+            }}
+            className="p-2.5 rounded-2xl border text-left transition-all active:scale-98 flex flex-col justify-between min-h-[75px] bg-amber-50/50 border-amber-200 shadow-2xs hover:bg-amber-50"
+          >
+            <div className="flex items-center justify-between w-full">
+              <span className="text-[10px] font-bold text-amber-700">ポーチ装備</span>
+              <Briefcase className="w-4 h-4 text-amber-600" />
+            </div>
+            <div className="mt-1">
+              <div className="text-xs font-black text-slate-900 truncate">
+                {currentPouchGear.name}
+              </div>
+              <div className="text-[9px] text-amber-700/80 font-mono font-bold truncate mt-0.5">
+                薬{currentPouchGear.capacity.potion} 食{currentPouchGear.capacity.food} 品{currentPouchGear.capacity.consumable} 装{currentPouchGear.capacity.gadget}
+              </div>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      {/* Perks (特技) Section */}
+      <section className="bg-white rounded-3xl p-4 shadow-sm border border-slate-200 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <Award className="w-4 h-4 text-amber-500" />
+            <h3 className="text-xs font-extrabold text-slate-800">レオの特技習得</h3>
+          </div>
+          <span className="text-[11px] text-slate-500">能力値条件 ＆ EXP消費</span>
+        </div>
+
+        <div className="space-y-2">
+          {state.perks.map((perk) => {
+            const isLearned = perk.level > 0;
+            const isMax = perk.level >= perk.maxLevel;
+            const nextLevel = perk.level + 1;
+            const expCost = perk.requiredExp * nextLevel;
+
+            // Check if stats requirements are met
+            const statReqs = Object.entries(perk.requiredStats).map(([k, reqVal]) => {
+              const currentVal = effectiveLeo[k as StatKey] || 0;
+              const isMet = currentVal >= (reqVal || 0);
+              const label =
+                k === 'dexterity'
+                  ? '身体技巧'
+                  : k === 'observation'
+                  ? '観察'
+                  : k === 'mobility'
+                  ? '身体操作'
+                  : k === 'knowledge'
+                  ? '知識'
+                  : k === 'endurance'
+                  ? '頑健'
+                  : k;
+              return { label, reqVal, currentVal, isMet };
+            });
+
+            const allStatsMet = statReqs.every((r) => r.isMet);
+            const canAfford = state.leo.exp >= expCost;
+            const canLearn = !isMax && allStatsMet && canAfford;
+
+            return (
+              <div
+                key={perk.id}
+                className={`p-3 rounded-2xl border transition-all ${
+                  isLearned
+                    ? 'bg-amber-50/40 border-amber-200/80'
+                    : 'bg-slate-50/50 border-slate-150'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-black text-slate-900">{perk.name}</span>
+                      <span
+                        className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
+                          isMax
+                            ? 'bg-amber-500 text-white'
+                            : isLearned
+                            ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                            : 'bg-slate-200 text-slate-500'
+                        }`}
+                      >
+                        {isMax ? 'MASTER' : isLearned ? `Lv.${perk.level}` : '未習得'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-600 mt-1 leading-relaxed">
+                      {perk.description}
+                    </p>
+
+                    {/* Stat Requirements */}
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <span className="text-[9px] text-slate-400 font-bold">要件:</span>
+                      {statReqs.map((sr) => (
+                        <span
+                          key={sr.label}
+                          className={`text-[9px] font-mono px-1.5 py-0.2 rounded-md font-semibold border ${
+                            sr.isMet
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : 'bg-rose-50 text-rose-700 border-rose-200'
+                          }`}
+                        >
+                          {sr.label} {sr.reqVal} (現{sr.currentVal})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {!isMax ? (
+                    <button
+                      disabled={!canLearn}
+                      onClick={() => learnPerk(perk.id)}
+                      className={`shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all flex flex-col items-center justify-center min-w-[70px] ${
+                        canLearn
+                          ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-xs active:scale-95'
+                          : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                      }`}
+                    >
+                      <span>{isLearned ? '強化' : '習得'}</span>
+                      <span className="text-[9px] font-mono opacity-90">{expCost} EXP</span>
+                    </button>
+                  ) : (
+                    <div className="shrink-0 px-2.5 py-1 rounded-xl bg-amber-100 text-amber-900 text-[10px] font-bold flex items-center gap-1">
+                      <Check className="w-3 h-3 text-amber-700" />
+                      <span>習得済</span>
+                    </div>
+                  )}
+                </div>
+              </div>
             );
           })}
         </div>
@@ -349,6 +493,78 @@ export const StatusTab: React.FC = () => {
                 ))
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pouch Gear Picker Modal */}
+      {showPouchPicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl p-5 max-w-sm w-full text-slate-800 shadow-2xl border border-amber-200 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-3 shrink-0">
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <Briefcase className="w-4 h-4 text-amber-600" />
+                <span>ポーチ装備の変更</span>
+              </h3>
+              <button
+                onClick={() => setShowPouchPicker(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 mb-3">
+              ※ポーチを変更すると、現在ポーチに入っているアイテムは全て所持品へ戻されます。
+            </p>
+
+            <div className="flex-1 overflow-y-auto space-y-2 mb-3">
+              {state.ownedPouchGears.map((gearId) => {
+                const gear = POUCH_GEARS[gearId];
+                if (!gear) return null;
+                const isEquipped = state.equippedPouch === gearId;
+
+                return (
+                  <button
+                    key={gearId}
+                    disabled={isEquipped}
+                    onClick={() => {
+                      equipPouchGear(gearId);
+                      setShowPouchPicker(false);
+                    }}
+                    className={`w-full p-3 rounded-2xl border text-left transition-all flex items-center justify-between ${
+                      isEquipped
+                        ? 'bg-amber-100/70 border-amber-400 text-amber-950 font-black ring-1 ring-amber-400'
+                        : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-800 active:scale-98'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-xs font-black flex items-center gap-1.5">
+                        <span>{gear.name}</span>
+                        {isEquipped && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-amber-200 text-amber-900 font-bold">
+                            装備中
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        {gear.description}
+                      </div>
+                      <div className="text-[10px] text-amber-700 font-mono font-bold mt-1">
+                        薬{gear.capacity.potion} · 食{gear.capacity.food} · 品{gear.capacity.consumable} · 装{gear.capacity.gadget}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setShowPouchPicker(false)}
+              className="w-full py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs"
+            >
+              閉じる
+            </button>
           </div>
         </div>
       )}

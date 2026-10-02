@@ -8,6 +8,10 @@ import {
   AlchemySlot,
   Facility,
   Dungeon,
+  PouchCategory,
+  PouchState,
+  Perk,
+  Quest,
 } from '../types/game';
 import {
   INITIAL_LEO_STATS,
@@ -15,6 +19,10 @@ import {
   INITIAL_RECIPES,
   INITIAL_FACILITIES,
   INITIAL_DUNGEONS,
+  POUCH_GEARS,
+  INITIAL_PERKS,
+  INITIAL_QUESTS,
+  FIELD_SHOP_ITEMS,
 } from '../data/initialData';
 import { sound } from '../utils/sound';
 
@@ -41,9 +49,20 @@ interface GameContextType {
   getStatUpgradeCost: (statKey: StatKey) => number;
   equipItem: (slot: EquipmentSlot, itemId: string) => void;
   unequipItem: (slot: EquipmentSlot) => void;
+  // Categorized Pouch & Gears
+  equipPouchGear: (gearId: string) => boolean;
+  buyPouchGear: (gearId: string) => boolean;
+  setPouchCategorySlot: (category: PouchCategory, index: number, itemId: string | null) => void;
   setPouchSlot: (index: number, itemId: string | null) => void;
-  updatePouch: (newPouch: (string | null)[]) => void;
-  buyItem: (itemId: string, count: number) => boolean;
+  updatePouch: (newPouch: PouchState | (string | null)[]) => void;
+  autoFillPouchCategory: (category: PouchCategory) => void;
+  clearPouchCategory: (category: PouchCategory) => void;
+  // Perks, Quests & Shop
+  learnPerk: (perkId: string) => boolean;
+  claimQuestReward: (questId: string) => boolean;
+  unlockMaterial: (materialId: string) => void;
+  buyShopMaterial: (itemId: string, count: number, customUnitPrice?: number) => boolean;
+  buyItem: (itemId: string, count: number, customUnitPrice?: number) => boolean;
   sellItem: (itemId: string, count: number) => boolean;
   modifyInventory: (itemId: string, delta: number) => void;
   addExp: (amount: number) => void;
@@ -68,12 +87,30 @@ const getInitialState = (): GameState => {
       armor: 'leather_vest',
       accessory: null,
     },
-    pouch: ['potion_small', 'potion_small', 'stamina_tonic', null],
+    equippedPouch: 'pouch_starter',
+    ownedPouchGears: ['pouch_starter'],
+    pouch: {
+      potion: ['potion_small', 'potion_small', null],
+      food: ['small_bread'],
+      consumable: ['throwing_knife'],
+      gadget: [null],
+    },
+    perks: JSON.parse(JSON.stringify(INITIAL_PERKS)),
+    quests: JSON.parse(JSON.stringify(INITIAL_QUESTS)),
+    unlockedMaterials: ['herb', 'clean_water', 'small_bread'],
+    shopStock: {
+      herb: 6,
+      clean_water: 6,
+      small_bread: 4,
+    },
     inventory: {
       herb: 6,
       clean_water: 4,
       potion_small: 3,
-      stamina_tonic: 2,
+      small_bread: 4,
+      herb_bread: 2,
+      throwing_knife: 2,
+      magnifier: 1,
     },
     recipes: JSON.parse(JSON.stringify(INITIAL_RECIPES)),
     alchemySlots: [
@@ -95,11 +132,34 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const recipes = (parsed.recipes || INITIAL_RECIPES).map((r: Recipe) => ({
-          ...r,
-          resultCount: 1,
-          timeDays: Math.max(1, r.timeDays || 1),
-        }));
+
+        const unlockedMaterials: string[] = parsed.unlockedMaterials || ['herb', 'clean_water', 'small_bread'];
+        const clearedCount = (parsed.dungeons || []).filter((d: Dungeon) => d.isCleared).length;
+
+        // Shop stock migration: replenish for all unlocked field materials
+        const shopStock: Record<string, number> = { ...(parsed.shopStock || {}) };
+        unlockedMaterials.forEach((mId) => {
+          if (FIELD_SHOP_ITEMS[mId] && shopStock[mId] === undefined) {
+            shopStock[mId] = FIELD_SHOP_ITEMS[mId].baseStock + clearedCount * 2;
+          }
+        });
+
+        // Recipe discovery & ingredients migration
+        const recipes = (parsed.recipes || INITIAL_RECIPES).map((r: Recipe) => {
+          const initR = INITIAL_RECIPES.find((ir) => ir.id === r.id);
+          const isDiscovered =
+            r.isDiscovered ??
+            r.isResearched ??
+            initR?.isDiscovered ??
+            r.ingredients.some((ing) => unlockedMaterials.includes(ing.itemId));
+          return {
+            ...r,
+            resultCount: 1,
+            timeDays: Math.max(1, r.timeDays || 1),
+            ingredients: initR?.ingredients || r.ingredients,
+            isDiscovered: Boolean(isDiscovered),
+          };
+        });
 
         // Migrate facilities: clean up deleted facilities, rename cauldron, ensure slot_boost
         let facilities: Facility[] = (parsed.facilities || INITIAL_FACILITIES)
@@ -123,11 +183,87 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         }
 
+        // Pouch migration to 4 categories
+        const equippedPouchId = parsed.equippedPouch || 'pouch_starter';
+        const currentGear = POUCH_GEARS[equippedPouchId] || POUCH_GEARS['pouch_starter'];
+        let migratedPouch: PouchState = {
+          potion: Array(currentGear.capacity.potion).fill(null),
+          food: Array(currentGear.capacity.food).fill(null),
+          consumable: Array(currentGear.capacity.consumable).fill(null),
+          gadget: Array(currentGear.capacity.gadget).fill(null),
+        };
+
+        if (Array.isArray(parsed.pouch)) {
+          // Old flat array pouch
+          for (const itId of parsed.pouch) {
+            if (!itId) continue;
+            const item = ITEMS[itId];
+            const cat: PouchCategory = item?.pouchCategory || (item?.type === 'food' ? 'food' : item?.type === 'offensive' || item?.type === 'consumable' ? 'consumable' : item?.type === 'gadget' ? 'gadget' : 'potion');
+            const emptyIdx = migratedPouch[cat].findIndex((x) => x === null);
+            if (emptyIdx !== -1) {
+              migratedPouch[cat][emptyIdx] = itId;
+            } else {
+              parsed.inventory = parsed.inventory || {};
+              parsed.inventory[itId] = (parsed.inventory[itId] || 0) + 1;
+            }
+          }
+        } else if (parsed.pouch && typeof parsed.pouch === 'object') {
+          migratedPouch = {
+            potion: Array.isArray(parsed.pouch.potion) ? parsed.pouch.potion : Array(currentGear.capacity.potion).fill(null),
+            food: Array.isArray(parsed.pouch.food) ? parsed.pouch.food : Array(currentGear.capacity.food).fill(null),
+            consumable: Array.isArray(parsed.pouch.consumable) ? parsed.pouch.consumable : Array(currentGear.capacity.consumable).fill(null),
+            gadget: Array.isArray(parsed.pouch.gadget) ? parsed.pouch.gadget : Array(currentGear.capacity.gadget).fill(null),
+          };
+        }
+
+        // Migrate perks: ensure all perks from INITIAL_PERKS exist
+        const savedPerks: Perk[] = parsed.perks || [];
+        const mergedPerks: Perk[] = INITIAL_PERKS.map((initP) => {
+          const match = savedPerks.find((sp) => sp.id === initP.id);
+          return match ? { ...initP, ...match } : { ...initP };
+        });
+
+        // Migrate quests: ensure all quests from INITIAL_QUESTS exist with clean definitions
+        const savedQuests: Quest[] = parsed.quests || [];
+        const mergedQuests: Quest[] = INITIAL_QUESTS.map((initQ) => {
+          const match = savedQuests.find((sq) => sq.id === initQ.id);
+          return match
+            ? { ...initQ, isCompleted: Boolean(match.isCompleted), isClaimed: Boolean(match.isClaimed) }
+            : { ...initQ };
+        });
+
+        // Migrate dungeons: ensure all 20 dungeons from INITIAL_DUNGEONS exist
+        const savedDungeons: Dungeon[] = parsed.dungeons || [];
+        const mergedDungeons: Dungeon[] = INITIAL_DUNGEONS.map((initD, idx) => {
+          const match = savedDungeons.find((sd) => sd.id === initD.id);
+          if (match) {
+            return {
+              ...initD,
+              isUnlocked: match.isUnlocked,
+              isCleared: match.isCleared,
+            };
+          }
+          return {
+            ...initD,
+            isUnlocked: idx === 0,
+          };
+        });
+
+        const ownedPouchGears: string[] = parsed.ownedPouchGears || ['pouch_starter'];
+
         return {
           ...getInitialState(),
           ...parsed,
           facilities,
           recipes,
+          dungeons: mergedDungeons,
+          equippedPouch: equippedPouchId,
+          ownedPouchGears,
+          pouch: migratedPouch,
+          perks: mergedPerks,
+          quests: mergedQuests,
+          unlockedMaterials,
+          shopStock,
           leo: { ...INITIAL_LEO_STATS, ...parsed.leo },
           equipped: { ...getInitialState().equipped, ...parsed.equipped },
         };
@@ -172,7 +308,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return remainder === 0 ? 0 : 7 - remainder;
   }, [state.day]);
 
-  // Compute Effective Leo Stats with equipment
+  // Compute Effective Leo Stats with equipment & passive gadgets
   const effectiveLeo = useMemo<LeoStats>(() => {
     const base = { ...state.leo };
     const equipItems = [
@@ -191,6 +327,20 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       });
     });
 
+    // Passive gadget bonuses from gadget pouch
+    if (state.pouch?.gadget) {
+      state.pouch.gadget.forEach((gId) => {
+        if (!gId) return;
+        const gItem = ITEMS[gId];
+        if (gItem?.gadgetBonus?.stat && typeof gItem.gadgetBonus.value === 'number') {
+          const statK = gItem.gadgetBonus.stat;
+          if (statK in base) {
+            (base as unknown as Record<string, number>)[statK] += gItem.gadgetBonus.value;
+          }
+        }
+      });
+    }
+
     // Recompute Max Stamina based on endurance + mobility: 20 + (endurance + mobility) * 0.5
     const computedMaxStamina = Math.round(20 + (base.endurance + base.mobility) * 0.5);
     base.stamina = Math.min(base.stamina, computedMaxStamina);
@@ -199,7 +349,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       ...base,
       maxStamina: computedMaxStamina,
     };
-  }, [state.leo, state.equipped]);
+  }, [state.leo, state.equipped, state.pouch]);
 
   // Advance Day (called after returning from gathering or dungeon)
   const advanceDay = (_adventureRewardText?: string) => {
@@ -226,6 +376,23 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         stamina: Math.round(20 + (prev.leo.endurance + prev.leo.mobility) * 0.5),
       };
 
+      // 3. Replenish Shop Stock for unlocked normal field materials (scaled by cleared dungeons)
+      const clearedDungeonsCount = prev.dungeons.filter((d) => d.isCleared).length;
+      const nextShopStock: Record<string, number> = {};
+      prev.unlockedMaterials.forEach((mId) => {
+        if (FIELD_SHOP_ITEMS[mId]) {
+          nextShopStock[mId] = FIELD_SHOP_ITEMS[mId].baseStock + clearedDungeonsCount * 2;
+        }
+      });
+
+      // 4. Refresh repeatable claimed quests on daily advance
+      const nextQuests = prev.quests.map((q) => {
+        if (q.isClaimed && q.isRepeatable) {
+          return { ...q, isCompleted: false, isClaimed: false };
+        }
+        return q;
+      });
+
       // Check Rent payment (Day 7, 14, 21...)
       if (nextDay % 7 === 0) {
         // Rent due
@@ -245,6 +412,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           leo: newLeo,
           inventory: newInventory,
           alchemySlots: newSlots,
+          shopStock: nextShopStock,
+          quests: nextQuests,
           totalAdventurersCompleted: prev.totalAdventurersCompleted + 1,
         };
       }
@@ -255,6 +424,8 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         leo: newLeo,
         inventory: newInventory,
         alchemySlots: newSlots,
+        shopStock: nextShopStock,
+        quests: nextQuests,
         totalAdventurersCompleted: prev.totalAdventurersCompleted + 1,
       };
     });
@@ -516,12 +687,52 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   };
 
-  // Pouch
-  const setPouchSlot = (index: number, itemId: string | null) => {
+  // Pouch Gear & Categorized Pouch
+  const equipPouchGear = (gearId: string): boolean => {
+    const gear = POUCH_GEARS[gearId];
+    if (!gear) return false;
+
     sound.playTap();
     setState((prev) => {
-      const newPouch = [...prev.pouch];
-      const oldItem = newPouch[index];
+      // 1. Un-equip all current items in all 4 categories and return to inventory
+      const newInv = { ...prev.inventory };
+      const categories: PouchCategory[] = ['potion', 'food', 'consumable', 'gadget'];
+      for (const cat of categories) {
+        for (const it of prev.pouch[cat] || []) {
+          if (it) {
+            newInv[it] = (newInv[it] || 0) + 1;
+          }
+        }
+      }
+
+      // 2. Allocate fresh slots matching the gear's capacity
+      const newPouch: PouchState = {
+        potion: Array(gear.capacity.potion).fill(null),
+        food: Array(gear.capacity.food).fill(null),
+        consumable: Array(gear.capacity.consumable).fill(null),
+        gadget: Array(gear.capacity.gadget).fill(null),
+      };
+
+      const owned = prev.ownedPouchGears.includes(gearId)
+        ? prev.ownedPouchGears
+        : [...prev.ownedPouchGears, gearId];
+
+      return {
+        ...prev,
+        equippedPouch: gearId,
+        ownedPouchGears: owned,
+        pouch: newPouch,
+        inventory: newInv,
+      };
+    });
+    return true;
+  };
+
+  const setPouchCategorySlot = (category: PouchCategory, index: number, itemId: string | null) => {
+    sound.playTap();
+    setState((prev) => {
+      const catList = [...(prev.pouch[category] || [])];
+      const oldItem = catList[index];
       const newInv = { ...prev.inventory };
 
       if (oldItem) {
@@ -535,28 +746,291 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       }
 
-      newPouch[index] = itemId;
+      catList[index] = itemId;
 
       return {
         ...prev,
-        pouch: newPouch,
+        pouch: {
+          ...prev.pouch,
+          [category]: catList,
+        },
         inventory: newInv,
       };
     });
   };
 
-  const updatePouch = (newPouch: (string | null)[]) => {
-    setState((prev) => ({
-      ...prev,
-      pouch: newPouch,
-    }));
+  // Backwards compatibility setPouchSlot (maps to potion belt)
+  const setPouchSlot = (index: number, itemId: string | null) => {
+    setPouchCategorySlot('potion', index, itemId);
   };
 
-  // Buy & Sell
-  const buyItem = (itemId: string, count: number): boolean => {
+  const updatePouch = (newPouch: PouchState | (string | null)[]) => {
+    setState((prev) => {
+      if (Array.isArray(newPouch)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        pouch: newPouch,
+      };
+    });
+  };
+
+  const autoFillPouchCategory = (category: PouchCategory) => {
+    sound.playTap();
+    setState((prev) => {
+      const catList = [...(prev.pouch[category] || [])];
+      const newInv = { ...prev.inventory };
+
+      for (let i = 0; i < catList.length; i++) {
+        if (catList[i] === null) {
+          const suitableEntry = Object.entries(newInv).find(([id, count]) => {
+            if (count <= 0) return false;
+            const it = ITEMS[id];
+            if (!it) return false;
+            if (category === 'potion') return it.pouchCategory === 'potion' || it.type === 'potion';
+            if (category === 'food') return it.pouchCategory === 'food' || it.type === 'food';
+            if (category === 'consumable') return it.pouchCategory === 'consumable' || it.type === 'consumable' || it.type === 'offensive';
+            if (category === 'gadget') return it.pouchCategory === 'gadget' || it.type === 'gadget';
+            return false;
+          });
+
+          if (suitableEntry) {
+            const [id] = suitableEntry;
+            catList[i] = id;
+            newInv[id] -= 1;
+            if (newInv[id] <= 0) delete newInv[id];
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        pouch: {
+          ...prev.pouch,
+          [category]: catList,
+        },
+        inventory: newInv,
+      };
+    });
+  };
+
+  const clearPouchCategory = (category: PouchCategory) => {
+    sound.playTap();
+    setState((prev) => {
+      const catList = [...(prev.pouch[category] || [])];
+      const newInv = { ...prev.inventory };
+
+      for (let i = 0; i < catList.length; i++) {
+        const it = catList[i];
+        if (it) {
+          newInv[it] = (newInv[it] || 0) + 1;
+          catList[i] = null;
+        }
+      }
+
+      return {
+        ...prev,
+        pouch: {
+          ...prev.pouch,
+          [category]: catList,
+        },
+        inventory: newInv,
+      };
+    });
+  };
+
+  // Perks
+  const learnPerk = (perkId: string): boolean => {
+    const targetPerk = state.perks.find((p) => p.id === perkId);
+    if (!targetPerk) return false;
+    if (targetPerk.level >= targetPerk.maxLevel) return false;
+
+    // Check stat requirements against effectiveLeo
+    for (const [stat, val] of Object.entries(targetPerk.requiredStats)) {
+      if ((effectiveLeo[stat as StatKey] || 0) < (val || 0)) {
+        return false;
+      }
+    }
+
+    const expCost = targetPerk.requiredExp * (targetPerk.level + 1);
+    if (state.leo.exp < expCost) return false;
+
+    sound.playLevelUp();
+    setState((prev) => ({
+      ...prev,
+      leo: {
+        ...prev.leo,
+        exp: prev.leo.exp - expCost,
+      },
+      perks: prev.perks.map((p) => {
+        if (p.id === perkId) {
+          return { ...p, level: p.level + 1 };
+        }
+        return p;
+      }),
+    }));
+    return true;
+  };
+
+  // Quests
+  const claimQuestReward = (questId: string): boolean => {
+    const quest = state.quests.find((q) => q.id === questId);
+    if (!quest || quest.isClaimed) return false;
+
+    const currentCount = state.inventory[quest.targetItemId] || 0;
+    if (currentCount < quest.targetCount) return false;
+
+    sound.playVictory();
+    setState((prev) => {
+      const newInv = { ...prev.inventory };
+      newInv[quest.targetItemId] -= quest.targetCount;
+      if (newInv[quest.targetItemId] <= 0) delete newInv[quest.targetItemId];
+
+      const newUnlocked = [...prev.unlockedMaterials];
+      if (quest.rewardItems) {
+        for (const item of quest.rewardItems) {
+          newInv[item.itemId] = (newInv[item.itemId] || 0) + item.count;
+          if (!newUnlocked.includes(item.itemId)) {
+            newUnlocked.push(item.itemId);
+          }
+        }
+      }
+
+      // Check recipe discoveries for newly unlocked reward items
+      const nextRecipes = prev.recipes.map((recipe) => {
+        if (recipe.isDiscovered) return recipe;
+        const usesUnlocked = recipe.ingredients.some((ing) => newUnlocked.includes(ing.itemId));
+        return usesUnlocked ? { ...recipe, isDiscovered: true } : recipe;
+      });
+
+      return {
+        ...prev,
+        gold: prev.gold + quest.rewardGold,
+        researchPoints: prev.researchPoints + (quest.rewardRp || 0),
+        inventory: newInv,
+        unlockedMaterials: newUnlocked,
+        recipes: nextRecipes,
+        quests: prev.quests.map((q) =>
+          q.id === questId ? { ...q, isCompleted: true, isClaimed: true } : q
+        ),
+      };
+    });
+    return true;
+  };
+
+  // Material Discovery & Shop Stock Initialization & Recipe Unlock Link
+  const unlockMaterial = (materialId: string) => {
+    setState((prev) => {
+      const isAlreadyUnlocked = prev.unlockedMaterials.includes(materialId);
+      const nextUnlocked = isAlreadyUnlocked
+        ? prev.unlockedMaterials
+        : [...prev.unlockedMaterials, materialId];
+
+      const nextShopStock = { ...prev.shopStock };
+      if (!isAlreadyUnlocked && FIELD_SHOP_ITEMS[materialId] && nextShopStock[materialId] === undefined) {
+        const clearedCount = prev.dungeons.filter((d) => d.isCleared).length;
+        nextShopStock[materialId] = FIELD_SHOP_ITEMS[materialId].baseStock + clearedCount * 2;
+      }
+
+      // Discover recipes that use this material
+      let newlyDiscoveredCount = 0;
+      const nextRecipes = prev.recipes.map((recipe) => {
+        if (recipe.isDiscovered) return recipe;
+        const usesMaterial = recipe.ingredients.some((ing) => ing.itemId === materialId);
+        if (usesMaterial) {
+          newlyDiscoveredCount++;
+          return { ...recipe, isDiscovered: true };
+        }
+        return recipe;
+      });
+
+      if (newlyDiscoveredCount > 0) {
+        sound.playPerk();
+      }
+
+      return {
+        ...prev,
+        unlockedMaterials: nextUnlocked,
+        shopStock: nextShopStock,
+        recipes: nextRecipes,
+      };
+    });
+  };
+
+  // Buy Normal Field Material from Daily Shop Stock
+  const buyShopMaterial = (itemId: string, count: number, customUnitPrice?: number): boolean => {
+    const itemConf = FIELD_SHOP_ITEMS[itemId];
+    if (!itemConf) return false;
+    const currentStock = state.shopStock[itemId] || 0;
+    if (currentStock < count) return false;
+    const unitPrice = typeof customUnitPrice === 'number' ? customUnitPrice : itemConf.buyPrice;
+    const totalCost = unitPrice * count;
+    if (state.gold < totalCost) return false;
+
+    sound.playCoin();
+    setState((prev) => ({
+      ...prev,
+      gold: prev.gold - totalCost,
+      shopStock: {
+        ...prev.shopStock,
+        [itemId]: (prev.shopStock[itemId] || 0) - count,
+      },
+      inventory: {
+        ...prev.inventory,
+        [itemId]: (prev.inventory[itemId] || 0) + count,
+      },
+    }));
+    return true;
+  };
+
+  // Buy & Equip Upgraded Pouch Gear from Shop
+  const buyPouchGear = (gearId: string): boolean => {
+    const gear = POUCH_GEARS[gearId];
+    if (!gear) return false;
+    if (state.ownedPouchGears.includes(gearId)) return false;
+
+    const clearedCount = state.dungeons.filter((d) => d.isCleared).length;
+    if (clearedCount < gear.requiredDungeonsCleared) return false;
+    if (state.gold < gear.buyPrice) return false;
+
+    sound.playCoin();
+
+    // Return items from previous pouch into inventory
+    const oldPouch = state.pouch;
+    const returnedInventory = { ...state.inventory };
+    (Object.keys(oldPouch) as PouchCategory[]).forEach((cat) => {
+      oldPouch[cat].forEach((itemId) => {
+        if (itemId) {
+          returnedInventory[itemId] = (returnedInventory[itemId] || 0) + 1;
+        }
+      });
+    });
+
+    const newPouchState: PouchState = {
+      potion: Array(gear.capacity.potion).fill(null),
+      food: Array(gear.capacity.food).fill(null),
+      consumable: Array(gear.capacity.consumable).fill(null),
+      gadget: Array(gear.capacity.gadget).fill(null),
+    };
+
+    setState((prev) => ({
+      ...prev,
+      gold: prev.gold - gear.buyPrice,
+      ownedPouchGears: [...prev.ownedPouchGears, gearId],
+      equippedPouch: gearId,
+      pouch: newPouchState,
+      inventory: returnedInventory,
+    }));
+    return true;
+  };
+
+  // Buy & Sell General
+  const buyItem = (itemId: string, count: number, customUnitPrice?: number): boolean => {
     const item = ITEMS[itemId];
     if (!item || !item.buyPrice) return false;
-    const cost = item.buyPrice * count;
+    const unitPrice = typeof customUnitPrice === 'number' ? customUnitPrice : item.buyPrice;
+    const cost = unitPrice * count;
     if (state.gold < cost) return false;
 
     sound.playCoin();
@@ -641,13 +1115,10 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return d;
       });
 
-      // Unlock next dungeon if first or second was cleared
-      if (dungeonId === 'dungeon_ruins') {
-        const next = updatedDungeons.find((d) => d.id === 'dungeon_academy');
-        if (next) next.isUnlocked = true;
-      } else if (dungeonId === 'dungeon_academy') {
-        const next = updatedDungeons.find((d) => d.id === 'dungeon_legendary');
-        if (next) next.isUnlocked = true;
+      // Unlock next dungeon in sequence (for 20 dungeons)
+      const clearedIndex = prev.dungeons.findIndex((d) => d.id === dungeonId);
+      if (clearedIndex !== -1 && clearedIndex + 1 < updatedDungeons.length) {
+        updatedDungeons[clearedIndex + 1].isUnlocked = true;
       }
 
       const clearedD = prev.dungeons.find((d) => d.id === dungeonId);
@@ -694,8 +1165,17 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         getStatUpgradeCost,
         equipItem,
         unequipItem,
+        equipPouchGear,
+        buyPouchGear,
+        setPouchCategorySlot,
         setPouchSlot,
         updatePouch,
+        autoFillPouchCategory,
+        clearPouchCategory,
+        learnPerk,
+        claimQuestReward,
+        unlockMaterial,
+        buyShopMaterial,
         buyItem,
         sellItem,
         modifyInventory,

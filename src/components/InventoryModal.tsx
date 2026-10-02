@@ -19,7 +19,7 @@ interface InventoryModalProps {
   onClose: () => void;
 }
 
-type FilterCategory = 'all' | 'equipment' | 'potion' | 'material' | 'valuable';
+type FilterCategory = 'all' | 'equipment' | 'potion' | 'food' | 'consumable' | 'gadget' | 'material' | 'valuable';
 
 export const InventoryModal: React.FC<InventoryModalProps> = ({ onClose }) => {
   const { state } = useGame();
@@ -48,7 +48,16 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ onClose }) => {
     .filter((e) => e.item.type === 'equipment')
     .reduce((acc, curr) => acc + curr.count, 0);
   const countPotion = inventoryList
-    .filter((e) => e.item.type === 'potion' || e.item.type === 'offensive')
+    .filter((e) => e.item.type === 'potion')
+    .reduce((acc, curr) => acc + curr.count, 0);
+  const countFood = inventoryList
+    .filter((e) => e.item.type === 'food')
+    .reduce((acc, curr) => acc + curr.count, 0);
+  const countConsumable = inventoryList
+    .filter((e) => e.item.type === 'consumable' || e.item.type === 'offensive')
+    .reduce((acc, curr) => acc + curr.count, 0);
+  const countGadget = inventoryList
+    .filter((e) => e.item.type === 'gadget')
     .reduce((acc, curr) => acc + curr.count, 0);
   const countMaterial = inventoryList
     .filter((e) => e.item.type === 'material')
@@ -61,7 +70,10 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ onClose }) => {
   const filteredItems = inventoryList.filter(({ item }) => {
     if (filter === 'all') return true;
     if (filter === 'equipment') return item.type === 'equipment';
-    if (filter === 'potion') return item.type === 'potion' || item.type === 'offensive';
+    if (filter === 'potion') return item.type === 'potion';
+    if (filter === 'food') return item.type === 'food';
+    if (filter === 'consumable') return item.type === 'consumable' || item.type === 'offensive';
+    if (filter === 'gadget') return item.type === 'gadget';
     if (filter === 'material') return item.type === 'material';
     if (filter === 'valuable') return item.type === 'valuable';
     return true;
@@ -69,10 +81,13 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ onClose }) => {
 
   const categories: { key: FilterCategory; label: string; icon: React.ReactNode; count: number }[] = [
     { key: 'all', label: 'すべて', icon: <Package className="w-3.5 h-3.5" />, count: countAll },
+    { key: 'potion', label: '薬', icon: <HeartPulse className="w-3.5 h-3.5" />, count: countPotion },
+    { key: 'food', label: '食糧', icon: <Package className="w-3.5 h-3.5" />, count: countFood },
+    { key: 'consumable', label: 'アイテム', icon: <Sparkles className="w-3.5 h-3.5" />, count: countConsumable },
+    { key: 'gadget', label: 'ガジェット', icon: <Sparkles className="w-3.5 h-3.5" />, count: countGadget },
     { key: 'equipment', label: '装備', icon: <Swords className="w-3.5 h-3.5" />, count: countEquipment },
-    { key: 'potion', label: 'ポーション', icon: <HeartPulse className="w-3.5 h-3.5" />, count: countPotion },
     { key: 'material', label: '素材', icon: <Leaf className="w-3.5 h-3.5" />, count: countMaterial },
-    { key: 'valuable', label: '換金用品', icon: <Coins className="w-3.5 h-3.5" />, count: countValuable },
+    { key: 'valuable', label: '換金', icon: <Coins className="w-3.5 h-3.5" />, count: countValuable },
   ];
 
   const getRarityBadge = (rarity: number) => {
@@ -93,9 +108,14 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({ onClose }) => {
       case 'equipment':
         return '装備品';
       case 'potion':
-        return '回復薬';
+        return 'ポーション';
+      case 'food':
+        return '食料品';
+      case 'consumable':
       case 'offensive':
-        return '攻撃薬';
+        return '冒険アイテム';
+      case 'gadget':
+        return 'ガジェット';
       case 'material':
         return '素材';
       case 'valuable':

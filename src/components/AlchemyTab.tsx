@@ -70,7 +70,8 @@ export const AlchemyTab: React.FC = () => {
   };
 
   const researchedRecipes = state.recipes.filter((r) => r.isResearched);
-  const unresearchedRecipes = state.recipes.filter((r) => !r.isResearched);
+  const unresearchedRecipes = state.recipes.filter((r) => !r.isResearched && r.isDiscovered);
+  const undiscoveredCount = state.recipes.filter((r) => !r.isResearched && !r.isDiscovered).length;
 
   const filteredResearched = researchedRecipes.filter((r) =>
     filterCategory === 'all' ? true : r.category === filterCategory
@@ -408,8 +409,17 @@ export const AlchemyTab: React.FC = () => {
         </div>
 
         {unresearchedRecipes.length === 0 ? (
-          <div className="text-center py-3 text-xs text-slate-500 font-medium">
-            すべてのレシピの研究が完了しています！
+          <div className="text-center py-4 px-2 bg-slate-50/80 rounded-xl border border-dashed border-slate-200">
+            <p className="text-xs text-slate-600 font-bold">
+              {undiscoveredCount > 0
+                ? '現在研究可能なレシピはありません。'
+                : 'すべてのレシピの研究が完了しています！'}
+            </p>
+            {undiscoveredCount > 0 && (
+              <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                ※冒険に出て未知の素材を採取・初入手すると、プリムラが新たな調合レシピ（未解読）をひらめきます！(未発見: {undiscoveredCount}種)
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-2">

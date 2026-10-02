@@ -1,16 +1,13 @@
 import React, { useState } from 'react';
 import { useGame } from '../context/GameContext';
-import { GatheringField, Dungeon } from '../types/game';
-import { ITEMS } from '../data/initialData';
+import { GatheringField, Dungeon, PouchCategory } from '../types/game';
+import { ITEMS, POUCH_GEARS } from '../data/initialData';
 import { ItemIcon } from './ItemIcon';
 import {
   Backpack,
   Compass,
   Landmark,
-  Heart,
   Zap,
-  Swords,
-  Shield,
   Plus,
   X,
   ChevronRight,
@@ -18,6 +15,12 @@ import {
   Sparkles,
   Footprints,
   Layers,
+  Wand2,
+  Trash2,
+  Briefcase,
+  Cookie,
+  HeartPulse,
+  Bomb,
 } from 'lucide-react';
 import { sound } from '../utils/sound';
 
@@ -29,6 +32,51 @@ interface DepartureConfirmModalProps {
   onClose: () => void;
 }
 
+const CATEGORY_CONFIG: Record<
+  PouchCategory,
+  {
+    name: string;
+    sub: string;
+    icon: any;
+    color: string;
+    badgeBg: string;
+    itemDesc: string;
+  }
+> = {
+  potion: {
+    name: 'ポーションベルト',
+    sub: '液体ポーション類 (HP回復)',
+    icon: HeartPulse,
+    color: 'text-rose-600',
+    badgeBg: 'bg-rose-50 border-rose-200 text-rose-800',
+    itemDesc: 'HPが低下した際に自動服用されます',
+  },
+  food: {
+    name: '食糧ポシェット',
+    sub: 'スタミナ回復食料品',
+    icon: Cookie,
+    color: 'text-amber-600',
+    badgeBg: 'bg-amber-50 border-amber-200 text-amber-800',
+    itemDesc: '体力が低下した際に自動喫食されます',
+  },
+  consumable: {
+    name: 'アイテムポーチ',
+    sub: '爆弾・投擲具・解毒薬・護符',
+    icon: Bomb,
+    color: 'text-violet-600',
+    badgeBg: 'bg-violet-50 border-violet-200 text-violet-800',
+    itemDesc: '戦闘時に手動タップで投擲・使用できます',
+  },
+  gadget: {
+    name: 'ガジェットポーチ',
+    sub: '探索補助具 (非消耗品)',
+    icon: Compass,
+    color: 'text-cyan-600',
+    badgeBg: 'bg-cyan-50 border-cyan-200 text-cyan-800',
+    itemDesc: '所持しているだけで判定補正や特殊効果を発揮',
+  },
+};
+
 export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
   mode,
   field,
@@ -36,24 +84,66 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
   onConfirm,
   onClose,
 }) => {
-  const { state, effectiveLeo, setPouchSlot } = useGame();
-  const [activeSlotIdx, setActiveSlotIdx] = useState<number | null>(null);
+  const {
+    state,
+    effectiveLeo,
+    setPouchCategorySlot,
+    autoFillPouchCategory,
+    clearPouchCategory,
+    equipPouchGear,
+  } = useGame();
 
-  // Available consumable/potion/throwable items from inventory
-  const availableItems = Object.entries(state.inventory)
-    .filter(([itemId, count]) => {
-      const item = ITEMS[itemId];
-      return (
-        item &&
-        (item.type === 'potion' || item.type === 'offensive') &&
-        count > 0
-      );
-    })
-    .map(([itemId]) => ITEMS[itemId]);
+  const [activeCategory, setActiveCategory] = useState<PouchCategory>('potion');
+  const [activeSlotIdx, setActiveSlotIdx] = useState<{
+    category: PouchCategory;
+    index: number;
+  } | null>(null);
 
-  const handleSelectPouchItem = (slotIdx: number, itemId: string | null) => {
-    setPouchSlot(slotIdx, itemId);
+  const [showGearPicker, setShowGearPicker] = useState<boolean>(false);
+
+  const currentGear =
+    POUCH_GEARS[state.equippedPouch] || POUCH_GEARS['pouch_starter'];
+
+  // Available items in inventory for the currently selected slot category
+  const getAvailableItemsForCategory = (cat: PouchCategory) => {
+    return Object.entries(state.inventory)
+      .filter(([itemId, count]) => {
+        if (count <= 0) return false;
+        const item = ITEMS[itemId];
+        if (!item) return false;
+        if (cat === 'potion')
+          return item.pouchCategory === 'potion' || item.type === 'potion';
+        if (cat === 'food')
+          return item.pouchCategory === 'food' || item.type === 'food';
+        if (cat === 'consumable')
+          return (
+            item.pouchCategory === 'consumable' ||
+            item.type === 'consumable' ||
+            item.type === 'offensive'
+          );
+        if (cat === 'gadget')
+          return item.pouchCategory === 'gadget' || item.type === 'gadget';
+        return false;
+      })
+      .map(([itemId]) => ITEMS[itemId]);
+  };
+
+  const handleSelectSlotItem = (
+    category: PouchCategory,
+    index: number,
+    itemId: string | null
+  ) => {
+    setPouchCategorySlot(category, index, itemId);
     setActiveSlotIdx(null);
+  };
+
+  const handleAutoFillAll = () => {
+    sound.playTap();
+    (['potion', 'food', 'consumable', 'gadget'] as PouchCategory[]).forEach(
+      (cat) => {
+        autoFillPouchCategory(cat);
+      }
+    );
   };
 
   const handleStart = () => {
@@ -67,7 +157,9 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
   };
 
   const destinationName = mode === 'gathering' ? field?.name : dungeon?.name;
-  const isPouchEmpty = state.pouch.every((id) => !id);
+  const isPouchEmpty = (['potion', 'food', 'consumable', 'gadget'] as PouchCategory[]).every(
+    (cat) => (state.pouch[cat] || []).every((id) => !id)
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-3">
@@ -91,7 +183,7 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
             <div>
               <h3 className="text-sm font-black text-slate-900">冒険出撃の準備確認</h3>
               <p className="text-[11px] text-slate-500 font-semibold">
-                行先と携帯ポーチのアイテムを確認してください
+                行先と携帯ポーチのカテゴリ装備を確認
               </p>
             </div>
           </div>
@@ -188,22 +280,128 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
             </div>
           </div>
 
-          {/* Adventure Pouch Management */}
-          <div className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-2xs space-y-2.5">
+          {/* Equipped Pouch Gear Banner */}
+          <div className="bg-amber-50/70 rounded-2xl p-3 border border-amber-200/80 flex items-center justify-between">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-900 flex items-center justify-center shrink-0">
+                <Briefcase className="w-4 h-4 text-amber-800" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black text-amber-950 truncate">
+                    {currentGear.name}
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-md bg-amber-200/70 text-amber-900">
+                    装備中
+                  </span>
+                </div>
+                <div className="text-[10px] text-amber-800/80 truncate">
+                  薬{currentGear.capacity.potion} · 食{currentGear.capacity.food} · 品{currentGear.capacity.consumable} · 装{currentGear.capacity.gadget}
+                </div>
+              </div>
+            </div>
+
+            {state.ownedPouchGears.length > 1 && (
+              <button
+                onClick={() => setShowGearPicker(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-white border border-amber-300 text-amber-900 text-[10px] font-black hover:bg-amber-100/60 active:scale-95 transition-all shrink-0"
+              >
+                ポーチ変更
+              </button>
+            )}
+          </div>
+
+          {/* Categorized Pouch Management */}
+          <div className="bg-white rounded-2xl p-3 border border-slate-200 shadow-2xs space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5">
                 <Backpack className="w-4 h-4 text-emerald-600" />
-                <h4 className="text-xs font-black text-slate-900">冒険携帯ポーチ (4枠)</h4>
+                <h4 className="text-xs font-black text-slate-900">
+                  冒険携帯ポーチ (4カテゴリ編成)
+                </h4>
               </div>
-              <span className="text-[10px] text-slate-500">タップしてアイテム変更</span>
+              <button
+                onClick={handleAutoFillAll}
+                className="px-2 py-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-black flex items-center gap-1 active:scale-95 transition-all"
+              >
+                <Wand2 className="w-3 h-3" />
+                <span>全自動補充</span>
+              </button>
             </div>
 
-            <p className="text-[10px] text-slate-500 leading-tight">
-              冒険中、HPが40%以下または体力が40%以下になると<strong>自動で服用</strong>されます（手動タップ使用も可）。
-            </p>
+            {/* Category Tabs */}
+            <div className="grid grid-cols-4 gap-1 p-1 bg-slate-100 rounded-2xl">
+              {(['potion', 'food', 'consumable', 'gadget'] as PouchCategory[]).map(
+                (cat) => {
+                  const cfg = CATEGORY_CONFIG[cat];
+                  const slots = state.pouch[cat] || [];
+                  const filledCount = slots.filter(Boolean).length;
+                  const maxCap = currentGear.capacity[cat] || slots.length;
+                  const isActive = activeCategory === cat;
 
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => {
+                        sound.playTap();
+                        setActiveCategory(cat);
+                      }}
+                      className={`py-1.5 px-1 rounded-xl text-center transition-all ${
+                        isActive
+                          ? 'bg-white shadow-xs font-black text-slate-900'
+                          : 'text-slate-500 font-bold hover:text-slate-700'
+                      }`}
+                    >
+                      <div className="text-[10px] flex items-center justify-center gap-0.5">
+                        <cfg.icon className={`w-3 h-3 ${cfg.color}`} />
+                        <span>{cat === 'potion' ? '薬' : cat === 'food' ? '食' : cat === 'consumable' ? '品' : '装'}</span>
+                      </div>
+                      <div className="text-[9px] text-slate-400 font-mono mt-0.5">
+                        {filledCount}/{maxCap}
+                      </div>
+                    </button>
+                  );
+                }
+              )}
+            </div>
+
+            {/* Active Category Header & Subtext */}
+            <div className="flex items-center justify-between pt-1">
+              <div>
+                <div className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                  <span>{CATEGORY_CONFIG[activeCategory].name}</span>
+                  <span
+                    className={`text-[9px] px-1.5 py-0.2 rounded-md font-bold border ${CATEGORY_CONFIG[activeCategory].badgeBg}`}
+                  >
+                    最大 {currentGear.capacity[activeCategory]} 枠
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500 mt-0.5">
+                  {CATEGORY_CONFIG[activeCategory].itemDesc}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => autoFillPouchCategory(activeCategory)}
+                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold active:scale-95 transition-all"
+                  title="このカテゴリを所持品から自動補充"
+                >
+                  補充
+                </button>
+                <button
+                  onClick={() => clearPouchCategory(activeCategory)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 active:scale-95 transition-all"
+                  title="このカテゴリを全て外す"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Slots for current category */}
             <div className="grid grid-cols-4 gap-2">
-              {state.pouch.map((itemId, idx) => {
+              {(state.pouch[activeCategory] || []).map((itemId, idx) => {
                 const item = itemId ? ITEMS[itemId] : null;
 
                 return (
@@ -211,25 +409,30 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
                     key={idx}
                     onClick={() => {
                       sound.playTap();
-                      setActiveSlotIdx(idx);
+                      setActiveSlotIdx({ category: activeCategory, index: idx });
                     }}
                     className={`p-2 rounded-2xl border text-center transition-all active:scale-95 flex flex-col items-center justify-center min-h-[64px] ${
                       item
-                        ? 'bg-emerald-50/70 border-emerald-300 shadow-2xs hover:bg-emerald-50'
+                        ? 'bg-amber-50/80 border-amber-300 shadow-2xs hover:bg-amber-100/70'
                         : 'bg-slate-50 border-dashed border-slate-250 text-slate-400 hover:bg-slate-100'
                     }`}
                   >
                     {item ? (
                       <>
-                        <ItemIcon name={item.icon} className="w-5 h-5 mb-1 shrink-0" />
-                        <span className="text-[10px] font-black text-emerald-950 truncate w-full">
+                        <ItemIcon
+                          name={item.icon}
+                          className="w-5 h-5 mb-1 shrink-0"
+                        />
+                        <span className="text-[10px] font-black text-amber-950 truncate w-full">
                           {item.name}
                         </span>
                       </>
                     ) : (
                       <>
                         <Plus className="w-4 h-4 text-slate-300 mb-0.5" />
-                        <span className="text-[10px] text-slate-400 font-semibold">セット</span>
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          #{idx + 1}
+                        </span>
                       </>
                     )}
                   </button>
@@ -238,9 +441,11 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
             </div>
 
             {isPouchEmpty && (
-              <div className="text-[10px] text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200 flex items-center gap-1.5">
+              <div className="text-[10px] text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 flex items-center gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                <span>ポーチが空です。回復薬やスタミナ薬をセットすると安全に冒険できます。</span>
+                <span>
+                  ポーチが全て空です。ポーションや食料品をセットすると安全に冒険できます。
+                </span>
               </div>
             )}
           </div>
@@ -272,11 +477,13 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
       {/* Item Selection Drawer */}
       {activeSlotIdx !== null && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-3xl p-4 sm:p-5 max-w-sm w-full text-slate-800 shadow-2xl border border-emerald-200 max-h-[80vh] flex flex-col">
+          <div className="bg-white rounded-3xl p-4 sm:p-5 max-w-sm w-full text-slate-800 shadow-2xl border border-amber-200 max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between mb-3 shrink-0 pb-2 border-b border-slate-150">
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
                 <Backpack className="w-4 h-4 text-emerald-600" />
-                ポーチスロット #{activeSlotIdx + 1} の選択
+                <span>
+                  {CATEGORY_CONFIG[activeSlotIdx.category].name} #{activeSlotIdx.index + 1}
+                </span>
               </h3>
               <button
                 onClick={() => setActiveSlotIdx(null)}
@@ -287,47 +494,138 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2 mb-3">
-              {state.pouch[activeSlotIdx] && (
+              {state.pouch[activeSlotIdx.category]?.[activeSlotIdx.index] && (
                 <button
-                  onClick={() => handleSelectPouchItem(activeSlotIdx, null)}
+                  onClick={() =>
+                    handleSelectSlotItem(
+                      activeSlotIdx.category,
+                      activeSlotIdx.index,
+                      null
+                    )
+                  }
                   className="w-full p-2.5 rounded-2xl border border-dashed border-slate-300 text-rose-600 hover:bg-rose-50 font-bold text-xs transition-colors"
                 >
                   ポーチから外す (所持品へ戻す)
                 </button>
               )}
 
-              {availableItems.length === 0 ? (
+              {getAvailableItemsForCategory(activeSlotIdx.category).length === 0 ? (
                 <div className="text-center py-8 text-xs text-slate-400">
-                  所持品にポーションやスタミナ薬がありません。<br />
+                  所持品に対象アイテムがありません。<br />
                   工房で調合するか商店で購入できます。
                 </div>
               ) : (
-                availableItems.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => handleSelectPouchItem(activeSlotIdx, item.id)}
-                    className="w-full p-3 rounded-2xl border border-slate-200 hover:bg-emerald-50/50 hover:border-emerald-300 text-left transition-all active:scale-98 flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <ItemIcon name={item.icon} className="w-6 h-6 shrink-0" />
-                      <div>
-                        <div className="text-xs font-black text-slate-900">
-                          {item.name}{' '}
-                          <span className="font-mono text-emerald-700 font-bold ml-1">
-                            (所持: {state.inventory[item.id]})
-                          </span>
+                getAvailableItemsForCategory(activeSlotIdx.category).map(
+                  (item) => (
+                    <button
+                      key={item.id}
+                      onClick={() =>
+                        handleSelectSlotItem(
+                          activeSlotIdx.category,
+                          activeSlotIdx.index,
+                          item.id
+                        )
+                      }
+                      className="w-full p-3 rounded-2xl border border-slate-200 hover:bg-amber-50/50 hover:border-amber-300 text-left transition-all active:scale-98 flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <ItemIcon
+                          name={item.icon}
+                          className="w-6 h-6 shrink-0"
+                        />
+                        <div>
+                          <div className="text-xs font-black text-slate-900">
+                            {item.name}{' '}
+                            <span className="font-mono text-amber-700 font-bold ml-1">
+                              (所持: {state.inventory[item.id]})
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-0.5">
+                            {item.description}
+                          </div>
                         </div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">{item.description}</div>
                       </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 ml-2" />
-                  </button>
-                ))
+                      <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 ml-2" />
+                    </button>
+                  )
+                )
               )}
             </div>
 
             <button
               onClick={() => setActiveSlotIdx(null)}
+              className="w-full py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pouch Gear Switcher Modal */}
+      {showGearPicker && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-3xl p-4 sm:p-5 max-w-sm w-full text-slate-800 shadow-2xl border border-amber-200 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-3 shrink-0 pb-2 border-b border-slate-150">
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <Briefcase className="w-4 h-4 text-amber-600" />
+                <span>ポーチ装備の変更</span>
+              </h3>
+              <button
+                onClick={() => setShowGearPicker(false)}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 mb-3">
+              ※ポーチを変更すると、現在ポーチに入っているアイテムは全て所持品へ戻されます。
+            </p>
+
+            <div className="flex-1 overflow-y-auto space-y-2 mb-3">
+              {state.ownedPouchGears.map((gearId) => {
+                const gear = POUCH_GEARS[gearId];
+                if (!gear) return null;
+                const isEquipped = state.equippedPouch === gearId;
+
+                return (
+                  <button
+                    key={gearId}
+                    disabled={isEquipped}
+                    onClick={() => {
+                      equipPouchGear(gearId);
+                      setShowGearPicker(false);
+                    }}
+                    className={`w-full p-3 rounded-2xl border text-left transition-all flex items-center justify-between ${
+                      isEquipped
+                        ? 'bg-amber-100/70 border-amber-400 text-amber-950 font-black ring-1 ring-amber-400'
+                        : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-800 active:scale-98'
+                    }`}
+                  >
+                    <div>
+                      <div className="text-xs font-black flex items-center gap-1.5">
+                        <span>{gear.name}</span>
+                        {isEquipped && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-amber-200 text-amber-900 font-bold">
+                            装備中
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">
+                        {gear.description}
+                      </div>
+                      <div className="text-[10px] text-amber-700 font-mono font-bold mt-1">
+                        薬{gear.capacity.potion} · 食{gear.capacity.food} · 品{gear.capacity.consumable} · 装{gear.capacity.gadget}
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setShowGearPicker(false)}
               className="w-full py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs"
             >
               閉じる
