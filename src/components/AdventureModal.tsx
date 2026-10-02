@@ -120,6 +120,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
   const logContainerRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const hasInitializedRef = useRef<boolean>(false);
 
   // Helpers for Perks & Gadgets
   const getPerkLevel = (effectType: string): number => {
@@ -210,17 +211,24 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
   // Start initialization log
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     if (mode === 'gathering' && field) {
       addLog(`【出発】${field.name}での採取を開始した！`, 'info');
     } else if (mode === 'dungeon' && dungeon) {
       addLog(`【潜入】${dungeon.name}の第1層に足を踏み入れた！`, 'info');
     }
 
-    // Report active gadgets
-    const activeGadgetNames = (state.pouch.gadget || [])
-      .filter(Boolean)
-      .map((id) => ITEMS[id!]?.name)
-      .filter(Boolean);
+    // Report active gadgets (deduplicated)
+    const activeGadgetNames = Array.from(
+      new Set(
+        (pouch.gadget || [])
+          .filter(Boolean)
+          .map((id) => ITEMS[id!]?.name)
+          .filter(Boolean)
+      )
+    );
     if (activeGadgetNames.length > 0) {
       addLog(`🧰【ガジェット装備】常時発動: ${activeGadgetNames.join('、')}`, 'gadget');
     }
@@ -343,11 +351,10 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       addLog(`${tag}レオはポーチの【${item.name}】を使い、HPが ${healAmount} 回復した！`, 'heal');
     }
 
-    // 2. Stamina Recovery
+    // 2. Stamina Recovery (Food items & Warming Balm)
     if (
       item.staminaRecovery ||
       item.type === 'food' ||
-      item.id === 'stamina_tonic' ||
       item.id === 'warming_balm'
     ) {
       const staminaAmount = item.staminaRecovery || item.effectValue || 15;
@@ -355,11 +362,10 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       addLog(`${tag}レオはポーチの【${item.name}】を口にし、体力が ${staminaAmount} 回復した！`, 'heal');
     }
 
-    // 3. Elixir Vital full heal
+    // 3. Elixir Vital full HP heal
     if (item.id === 'elixir_vital') {
       setCurrentHp(effectiveLeo.maxHp);
-      setCurrentStamina(effectiveLeo.maxStamina);
-      addLog(`${tag}レオはポーチの【${item.name}】を飲み、HPと体力が全快した！`, 'heal');
+      addLog(`${tag}レオはポーチの【${item.name}】を飲み、HPが全快した！`, 'heal');
     }
 
     // 4. Cure Ailments
@@ -427,12 +433,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       const foodSlotIdx = (pouch.food || []).findIndex(Boolean);
       if (foodSlotIdx !== -1) {
         return usePouchItem('food', foodSlotIdx, 'auto');
-      }
-      const potionSlotIdx = (pouch.potion || []).findIndex(
-        (id) => id === 'stamina_tonic' || id === 'elixir_vital'
-      );
-      if (potionSlotIdx !== -1) {
-        return usePouchItem('potion', potionSlotIdx, 'auto');
       }
     }
     return false;
@@ -532,13 +532,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       const foodRescueSlot = (pouch.food || []).findIndex(Boolean);
       if (foodRescueSlot !== -1) {
         usePouchItem('food', foodRescueSlot, 'emergency');
-        return;
-      }
-      const potionRescueSlot = (pouch.potion || []).findIndex(
-        (id) => id === 'stamina_tonic' || id === 'elixir_vital'
-      );
-      if (potionRescueSlot !== -1) {
-        usePouchItem('potion', potionRescueSlot, 'emergency');
         return;
       }
       sound.playFail();
@@ -847,7 +840,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           const perkName =
             critMasterLv > 0
               ? `特技：会心の極意 Lv${critMasterLv}`
-              : `特技：痛打 Lv${strongStrikeLv}`;
+              : `特技：強撃 Lv${strongStrikeLv}`;
           addLog(
             `⚡【${perkName}】急所を貫く痛烈な一太刀！${activeEnemy.name}に ${leoDmg} ダメージ！`,
             'perk'
@@ -916,7 +909,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         const perkName =
           acrobatLv > 0
             ? `特技：軽身のアクロバット Lv${acrobatLv}`
-            : `特技：見切り Lv${evasionLv}`;
+            : `特技：回避術 Lv${evasionLv}`;
         addLog(
           `💨【${perkName}】華麗な身のこなしで攻撃を完全に回避！(ダメージ0)`,
           'perk'
@@ -1229,19 +1222,22 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
               </h2>
 
               {/* 迷宮攻略モーダル用：現在階の大きな表示 */}
-              {mode === 'dungeon' && dungeon && (
-                <div className="flex items-center gap-1.5 bg-black/40 backdrop-blur-md border border-amber-300/80 px-2.5 py-0.5 rounded-xl shadow-inner">
-                  <span className="text-[10px] text-amber-300 font-black tracking-wider uppercase">
-                    階層
-                  </span>
-                  <span className="font-mono text-base sm:text-lg font-black text-amber-300 drop-shadow-xs leading-none">
-                    B{currentFloorIndex + 1}F
-                  </span>
-                  <span className="text-[10px] text-white/70 font-bold leading-none">
-                    / B{dungeon.floorsCount || dungeon.floors.length}F
-                  </span>
-                </div>
-              )}
+              {mode === 'dungeon' && dungeon && (() => {
+                const isCleared = state.dungeons.find((d) => d.id === dungeon.id)?.isCleared ?? dungeon.isCleared;
+                return (
+                  <div className="flex items-center gap-1.5 bg-black/40 backdrop-blur-md border border-amber-300/80 px-2.5 py-0.5 rounded-xl shadow-inner">
+                    <span className="text-[10px] text-amber-300 font-black tracking-wider uppercase">
+                      階層
+                    </span>
+                    <span className="font-mono text-base sm:text-lg font-black text-amber-300 drop-shadow-xs leading-none">
+                      B{currentFloorIndex + 1}F
+                    </span>
+                    <span className="text-[10px] text-white/70 font-bold leading-none">
+                      {isCleared ? `/ B${dungeon.floorsCount || dungeon.floors.length}F` : '/ ？？F'}
+                    </span>
+                  </div>
+                );
+              })()}
             </div>
 
             <div className="text-[11px] text-amber-100/90 mt-0.5 truncate font-medium">
@@ -1361,6 +1357,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                   🏹 先制射撃
                 </span>
               )}
+              {hasGadget('gadget_heavy_crossbow') && (
+                <span className="bg-sky-50 text-sky-800 border border-sky-200 px-1.5 py-0.2 rounded font-black whitespace-nowrap">
+                  🏹 重連射
+                </span>
+              )}
               {hasGadget('magnifier') && (
                 <span className="bg-sky-50 text-sky-800 border border-sky-200 px-1.5 py-0.2 rounded font-black whitespace-nowrap">
                   🔍 観察+2
@@ -1379,6 +1380,16 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
               {hasGadget('camp_kit') && (
                 <span className="bg-sky-50 text-sky-800 border border-sky-200 px-1.5 py-0.2 rounded font-black whitespace-nowrap">
                   ⛺ 野営回復
+                </span>
+              )}
+              {hasGadget('gadget_luxury_camp') && (
+                <span className="bg-sky-50 text-sky-800 border border-sky-200 px-1.5 py-0.2 rounded font-black whitespace-nowrap">
+                  ⛺ 高級野営
+                </span>
+              )}
+              {hasGadget('gadget_auto_compass') && (
+                <span className="bg-sky-50 text-sky-800 border border-sky-200 px-1.5 py-0.2 rounded font-black whitespace-nowrap">
+                  🧭 機巧磁針
                 </span>
               )}
 

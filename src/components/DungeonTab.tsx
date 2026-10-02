@@ -31,6 +31,13 @@ export const DungeonTab: React.FC<DungeonTabProps> = ({ onStartDungeon }) => {
 
   const clearedCount = state.dungeons.filter((d) => d.isCleared).length;
 
+  // Show unlocked dungeons + at most 1 next locked dungeon ("次のダンジョン以降は表示もしない")
+  const nextLockedIndex = state.dungeons.findIndex((d) => !d.isUnlocked);
+  const visibleDungeons = state.dungeons.filter((_, idx) => {
+    if (nextLockedIndex === -1) return true;
+    return idx <= nextLockedIndex;
+  });
+
   return (
     <div className="pb-24 pt-2 px-3 max-w-lg mx-auto space-y-4 select-none">
       {/* Trophy & Goal Header */}
@@ -52,7 +59,7 @@ export const DungeonTab: React.FC<DungeonTabProps> = ({ onStartDungeon }) => {
 
       {/* Dungeon List */}
       <section className="space-y-3">
-        {state.dungeons.map((dungeon, index) => {
+        {visibleDungeons.map((dungeon, index) => {
           const isLocked = !dungeon.isUnlocked;
           const isCleared = dungeon.isCleared;
           const isLegendary = dungeon.id === 'dungeon_legendary';

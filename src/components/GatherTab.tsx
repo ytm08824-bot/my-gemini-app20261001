@@ -23,6 +23,15 @@ export const GatherTab: React.FC<GatherTabProps> = ({ onStartGathering }) => {
 
   const clearedCount = state.dungeons.filter((d) => d.isCleared).length;
 
+  // Show unlocked fields + at most 1 next locked field ("次のフィールド以降は表示もしない")
+  const nextLockedFieldIndex = GATHERING_FIELDS.findIndex(
+    (field) => clearedCount < (field.requiredDungeonsCleared || 0)
+  );
+  const visibleFields = GATHERING_FIELDS.filter((_, idx) => {
+    if (nextLockedFieldIndex === -1) return true;
+    return idx <= nextLockedFieldIndex;
+  });
+
   const handleStart = (field: GatheringField) => {
     sound.playTap();
     onStartGathering(field);
@@ -48,7 +57,7 @@ export const GatherTab: React.FC<GatherTabProps> = ({ onStartGathering }) => {
 
       {/* Field List */}
       <section className="space-y-3">
-        {GATHERING_FIELDS.map((field, index) => {
+        {visibleFields.map((field, index) => {
           const reqClears = field.requiredDungeonsCleared || 0;
           const isLocked = clearedCount < reqClears;
 

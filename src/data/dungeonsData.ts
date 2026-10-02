@@ -6,9 +6,9 @@ function generateDungeonFloors(config: {
   totalFloors: number;
   basePoints: number;
   level: number;
-  statPrimary: 'dexterity' | 'mobility' | 'endurance' | 'observation' | 'knowledge';
+  statPrimary: 'dexterity' | 'mobility' | 'endurance' | 'observation' | 'knowledge' | 'social';
   statPrimaryName: string;
-  statSecondary: 'dexterity' | 'mobility' | 'endurance' | 'observation' | 'knowledge';
+  statSecondary: 'dexterity' | 'mobility' | 'endurance' | 'observation' | 'knowledge' | 'social';
   statSecondaryName: string;
   enemyPool: Enemy[];
   harvestPool: { itemId: string; weight: number }[];
@@ -39,13 +39,21 @@ function generateDungeonFloors(config: {
           goldReward: Math.round(e.goldReward * (1 + (f - 1) * 0.05)),
         }));
 
+    const isSocial = statKey === 'social';
+    const gimmickTitle = isSocial
+      ? `${f}層の迷宮交渉・対話試練`
+      : `${f}層の関門仕掛け`;
+    const gimmickDesc = isSocial
+      ? `迷宮を彷徨う精霊や守護者の意思が語りかけてくる。友好的に対話し、道を切り開け！(${statName}判定)`
+      : `深部へ進むための道が阻まれている。突破の道を見出せ！(${statName}判定)`;
+
     const floorGimmicks: Gimmick[] = isFinal
       ? []
       : [
           {
             id: `${config.dungeonId}_gimmick_f${f}`,
-            title: `${f}層の関門仕掛け`,
-            description: `深部へ進むための道が阻まれている。突破の道を見出せ！(${statName}判定)`,
+            title: gimmickTitle,
+            description: gimmickDesc,
             requiredStat: statKey,
             statName: statName,
             difficulty: difficulty,
@@ -54,7 +62,9 @@ function generateDungeonFloors(config: {
             successGold: Math.round(30 + config.level * 8 + f * 6),
             partialDamage: Math.round(5 + f * 1.5),
             failureDamage: Math.round(10 + f * 2.5),
-            criticalSuccessBonus: '見事な判断で突破！探索ポイントを大幅に進めた！',
+            criticalSuccessBonus: isSocial
+              ? '心の機微を捉えた完璧な対話！相手は感銘を受け、先へ通してくれた！'
+              : '見事な判断で突破！探索ポイントを大幅に進めた！',
           },
         ];
 
@@ -179,13 +189,13 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
     ],
   },
 
-  // 2. 旧魔導学院跡 (4 Floors, Lv.4)
+  // 2. 旧魔導学院跡 (4 Floors, Lv.3)
   {
     id: 'dungeon_academy',
     name: '旧魔導学院跡',
     description: 'かつて錬金術と魔法研究の拠点だった廃墟。自律魔導書や警備ゴーレムが今なお巡回する。',
     rumorDescription: 'ギルドの伝聞：青い光が窓から漏れる不気味な廃墟。古代の魔導書や魔導核が眠るらしい。',
-    recommendedLevel: 4,
+    recommendedLevel: 3,
     floorsCount: 4,
     bgGradient: 'from-violet-800/20 via-indigo-900/20 to-slate-950/30',
     icon: 'BookMarked',
@@ -201,12 +211,12 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
           {
             id: 'living_book',
             name: '自律魔導書',
-            hp: 45,
-            maxHp: 45,
-            atk: 15,
-            def: 7,
-            expReward: 40,
-            goldReward: 50,
+            hp: 32,
+            maxHp: 32,
+            atk: 11,
+            def: 4,
+            expReward: 28,
+            goldReward: 35,
             dropItems: [{ itemId: 'ancient_parchment', chance: 0.6 }],
             icon: 'BookOpen',
           },
@@ -218,12 +228,12 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
             description: '青白い魔力光線が張り巡らされている。観察して死角をすり抜けろ！(観察力判定)',
             requiredStat: 'observation',
             statName: '観察力',
-            difficulty: 11,
-            successExp: 45,
-            successReward: { itemId: 'crystal_shard', count: 2 },
-            successGold: 60,
-            partialDamage: 8,
-            failureDamage: 18,
+            difficulty: 8,
+            successExp: 35,
+            successReward: { itemId: 'crystal_shard', count: 1 },
+            successGold: 45,
+            partialDamage: 4,
+            failureDamage: 8,
             failureAilment: { type: 'paralysis', level: 1 },
             criticalSuccessBonus: '死角を完璧に見破った！動力源の魔導結晶片を回収！',
           },
@@ -242,15 +252,15 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
           {
             id: 'mana_ooze',
             name: '魔導廃液スライム',
-            hp: 60,
-            maxHp: 60,
-            atk: 19,
-            def: 11,
-            expReward: 55,
-            goldReward: 65,
+            hp: 38,
+            maxHp: 38,
+            atk: 12,
+            def: 5,
+            expReward: 35,
+            goldReward: 45,
             dropItems: [{ itemId: 'crystal_shard', chance: 0.7 }],
             icon: 'Droplet',
-            inflictAilment: { type: 'paralysis', chance: 0.35, level: 1 },
+            inflictAilment: { type: 'paralysis', chance: 0.2, level: 1 },
           },
         ],
         gimmicks: [
@@ -260,12 +270,12 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
             description: '極冷の冷却蒸気が噴出している。凍気に耐えてバルブを閉めろ！(頑健判定)',
             requiredStat: 'endurance',
             statName: '頑健',
-            difficulty: 12,
-            successExp: 50,
-            successReward: { itemId: 'silver_ore', count: 2 },
-            successGold: 70,
-            partialDamage: 10,
-            failureDamage: 22,
+            difficulty: 9,
+            successExp: 40,
+            successReward: { itemId: 'silver_ore', count: 1 },
+            successGold: 50,
+            partialDamage: 5,
+            failureDamage: 9,
             failureAilment: { type: 'frostbite', level: 1 },
             criticalSuccessBonus: '冷気に怯むことなく一気にバルブを固縛！',
           },
@@ -284,12 +294,12 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
           {
             id: 'shadow_homunculus',
             name: '暴走ホムンクルス',
-            hp: 75,
-            maxHp: 75,
-            atk: 23,
-            def: 13,
-            expReward: 70,
-            goldReward: 80,
+            hp: 46,
+            maxHp: 46,
+            atk: 13,
+            def: 6,
+            expReward: 42,
+            goldReward: 55,
             dropItems: [{ itemId: 'ancient_parchment', chance: 0.8 }],
             icon: 'Flame',
           },
@@ -301,12 +311,12 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
             description: '複雑な古代文字が刻まれた認証扉。知識を総動員して解除せよ！(知識判定)',
             requiredStat: 'knowledge',
             statName: '知識',
-            difficulty: 12,
-            successExp: 60,
-            successReward: { itemId: 'ancient_parchment', count: 2 },
-            successGold: 90,
-            partialDamage: 12,
-            failureDamage: 25,
+            difficulty: 9,
+            successExp: 45,
+            successReward: { itemId: 'ancient_parchment', count: 1 },
+            successGold: 60,
+            partialDamage: 5,
+            failureDamage: 10,
             criticalSuccessBonus: '古代語の構文を完璧に読解！即座に扉が開放された！',
           },
         ],
@@ -329,12 +339,12 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
         boss: {
           id: 'boss_arcane_golem',
           name: '学院の番人「魔導守護機兵」',
-          hp: 140,
-          maxHp: 140,
-          atk: 29,
-          def: 18,
-          expReward: 160,
-          goldReward: 220,
+          hp: 85,
+          maxHp: 85,
+          atk: 16,
+          def: 8,
+          expReward: 100,
+          goldReward: 140,
           dropItems: [
             { itemId: 'crystal_shard', chance: 1.0 },
             { itemId: 'ancient_parchment', chance: 1.0 },
@@ -345,13 +355,13 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
     ],
   },
 
-  // 3. 胞子蠢く毒茸洞窟 (3 Floors, Lv.6)
+  // 3. 胞子蠢く毒茸洞窟 (3 Floors, Lv.5)
   {
     id: 'dungeon_fungus_cave',
     name: '胞子蠢く毒茸洞窟',
     description: '湿地帯の地下に広がる菌糸の迷宮。吸い込むと神経を麻痺させる猛毒胞子が充満する。',
     rumorDescription: 'ギルドの伝聞：洞窟全体が巨大なキノコの母体に侵食されており、解毒剤なしでは数分ともたないという。',
-    recommendedLevel: 6,
+    recommendedLevel: 5,
     floorsCount: 3,
     bgGradient: 'from-emerald-900/25 via-purple-950/20 to-slate-900/30',
     icon: 'Trees',
@@ -362,7 +372,7 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
       dungeonId: 'dungeon_fungus_cave',
       totalFloors: 3,
       basePoints: 100,
-      level: 6,
+      level: 5,
       statPrimary: 'endurance',
       statPrimaryName: '頑健',
       statSecondary: 'knowledge',
@@ -371,15 +381,15 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
         {
           id: 'spore_bat',
           name: '毒茸コウモリ',
-          hp: 55,
-          maxHp: 55,
-          atk: 20,
-          def: 10,
-          expReward: 48,
-          goldReward: 55,
+          hp: 44,
+          maxHp: 44,
+          atk: 14,
+          def: 6,
+          expReward: 40,
+          goldReward: 45,
           dropItems: [{ itemId: 'poison_herb', chance: 0.7 }],
           icon: 'Skull',
-          inflictAilment: { type: 'poison', chance: 0.4, level: 1 },
+          inflictAilment: { type: 'poison', chance: 0.35, level: 1 },
         },
       ],
       harvestPool: [
@@ -390,26 +400,26 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
       finalBoss: {
         id: 'boss_mother_fungus',
         name: '群体母核「マザーファンガス」',
-        hp: 165,
-        maxHp: 165,
-        atk: 30,
-        def: 17,
-        expReward: 190,
-        goldReward: 250,
+        hp: 105,
+        maxHp: 105,
+        atk: 18,
+        def: 9,
+        expReward: 130,
+        goldReward: 180,
         dropItems: [{ itemId: 'poison_herb', chance: 1.0 }, { itemId: 'fairy_spore', chance: 1.0 }],
         icon: 'Flower',
-        inflictAilment: { type: 'poison', chance: 0.5, level: 2 },
+        inflictAilment: { type: 'poison', chance: 0.45, level: 2 },
       },
     }),
   },
 
-  // 4. 水没した納骨堂 (4 Floors, Lv.8)
+  // 4. 水没した納骨堂 (4 Floors, Lv.7)
   {
     id: 'dungeon_sunken_crypt',
     name: '水没した納骨堂',
     description: '地下水脈の氾濫により半分水没した古の霊廟。足場が滑りやすく、亡霊が漂う。',
     rumorDescription: 'ギルドの伝聞：冷たい地下水に浸かった地下納骨堂。光を嫌う水棲の霊が潜んでいるらしい。',
-    recommendedLevel: 8,
+    recommendedLevel: 7,
     floorsCount: 4,
     bgGradient: 'from-cyan-900/25 via-blue-950/20 to-slate-900/30',
     icon: 'Anchor',
@@ -420,7 +430,7 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
       dungeonId: 'dungeon_sunken_crypt',
       totalFloors: 4,
       basePoints: 100,
-      level: 8,
+      level: 7,
       statPrimary: 'mobility',
       statPrimaryName: '身体操作力',
       statSecondary: 'dexterity',
@@ -429,12 +439,12 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
         {
           id: 'drowned_skeleton',
           name: '水没スケルトン',
-          hp: 68,
-          maxHp: 68,
-          atk: 24,
-          def: 12,
-          expReward: 60,
-          goldReward: 70,
+          hp: 52,
+          maxHp: 52,
+          atk: 16,
+          def: 7,
+          expReward: 50,
+          goldReward: 60,
           dropItems: [{ itemId: 'blue_coral', chance: 0.5 }, { itemId: 'clean_water', chance: 0.7 }],
           icon: 'Skull',
         },
@@ -447,25 +457,25 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
       finalBoss: {
         id: 'boss_sunken_wraith',
         name: '水底の怨嗟「溺死のレイス」',
-        hp: 190,
-        maxHp: 190,
-        atk: 33,
-        def: 18,
-        expReward: 230,
-        goldReward: 300,
+        hp: 130,
+        maxHp: 130,
+        atk: 21,
+        def: 11,
+        expReward: 170,
+        goldReward: 230,
         dropItems: [{ itemId: 'sea_pearl', chance: 0.8 }, { itemId: 'blue_coral', chance: 1.0 }],
         icon: 'Ghost',
       },
     }),
   },
 
-  // 5. 暴走した古代廃坑 (5 Floors, Lv.10)
+  // 5. 暴走した古代廃坑 (5 Floors, Lv.9)
   {
     id: 'dungeon_iron_mine',
     name: '暴走した古代廃坑',
     description: 'かつて膨大な鉄と銀を産出した大坑道。放置された自動採掘機械が侵入者を敵と認識して暴走中。',
     rumorDescription: 'ギルドの伝聞：今も地下深くで巨大な歯車とドリルが回り続けているという古代の鉱山。',
-    recommendedLevel: 10,
+    recommendedLevel: 9,
     floorsCount: 5,
     bgGradient: 'from-amber-900/25 via-stone-900/20 to-stone-950/30',
     icon: 'Wrench',
@@ -476,7 +486,7 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
       dungeonId: 'dungeon_iron_mine',
       totalFloors: 5,
       basePoints: 100,
-      level: 10,
+      level: 9,
       statPrimary: 'endurance',
       statPrimaryName: '頑健',
       statSecondary: 'knowledge',
@@ -485,12 +495,12 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
         {
           id: 'mine_automaton',
           name: '採掘オートマタ',
-          hp: 85,
-          maxHp: 85,
-          atk: 27,
-          def: 18,
-          expReward: 75,
-          goldReward: 90,
+          hp: 62,
+          maxHp: 62,
+          atk: 19,
+          def: 9,
+          expReward: 62,
+          goldReward: 75,
           dropItems: [{ itemId: 'iron_ore', chance: 0.9 }, { itemId: 'silver_ore', chance: 0.4 }],
           icon: 'Shield',
         },
@@ -503,12 +513,12 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
       finalBoss: {
         id: 'boss_mining_titan',
         name: '暴走穿孔機「ヘビードリル・タイタン」',
-        hp: 230,
-        maxHp: 230,
-        atk: 37,
-        def: 24,
-        expReward: 280,
-        goldReward: 380,
+        hp: 160,
+        maxHp: 160,
+        atk: 25,
+        def: 13,
+        expReward: 210,
+        goldReward: 290,
         dropItems: [{ itemId: 'silver_ingot', chance: 1.0 }, { itemId: 'iron_ore', chance: 1.0 }],
         icon: 'Wrench',
       },
@@ -985,8 +995,8 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
       level: 28,
       statPrimary: 'mobility',
       statPrimaryName: '身体操作力',
-      statSecondary: 'knowledge',
-      statSecondaryName: '知識',
+      statSecondary: 'social',
+      statSecondaryName: '社交力',
       enemyPool: [
         {
           id: 'celestial_guardian',
@@ -1153,8 +1163,8 @@ export const INITIAL_DUNGEONS: Dungeon[] = [
       level: 34,
       statPrimary: 'observation',
       statPrimaryName: '観察力',
-      statSecondary: 'knowledge',
-      statSecondaryName: '知識',
+      statSecondary: 'social',
+      statSecondaryName: '社交力',
       enemyPool: [
         {
           id: 'mirror_phantom',

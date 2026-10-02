@@ -160,6 +160,9 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
   const isPouchEmpty = (['potion', 'food', 'consumable', 'gadget'] as PouchCategory[]).every(
     (cat) => (state.pouch[cat] || []).every((id) => !id)
   );
+  const isDungeonCleared = dungeon
+    ? state.dungeons.find((d) => d.id === dungeon.id)?.isCleared ?? dungeon.isCleared
+    : false;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-xs p-3">
@@ -215,7 +218,11 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
                   )}
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed mt-1">
-                  {mode === 'gathering' ? field?.description : dungeon?.description}
+                  {mode === 'gathering'
+                    ? field?.description
+                    : isDungeonCleared
+                    ? dungeon?.description
+                    : dungeon?.rumorDescription || dungeon?.description}
                 </p>
               </div>
             </div>
@@ -238,7 +245,7 @@ export const DepartureConfirmModal: React.FC<DepartureConfirmModalProps> = ({
                 <>
                   <span className="flex items-center gap-1 font-semibold">
                     <Layers className="w-3.5 h-3.5 text-indigo-600" />
-                    全 {dungeon.floorsCount} 階層
+                    {isDungeonCleared ? `全 ${dungeon.floorsCount} 階層` : '階層数：？？ (未踏破)'}
                   </span>
                   <span>·</span>
                   <span className="flex items-center gap-1 font-semibold">

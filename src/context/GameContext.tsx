@@ -112,7 +112,16 @@ const getInitialState = (): GameState => {
       throwing_knife: 2,
       magnifier: 1,
     },
-    recipes: JSON.parse(JSON.stringify(INITIAL_RECIPES)),
+    recipes: JSON.parse(JSON.stringify(INITIAL_RECIPES)).map((r: Recipe) => {
+      const allUnlocked = r.ingredients.every((ing) =>
+        ['herb', 'clean_water', 'small_bread'].includes(ing.itemId)
+      );
+      return {
+        ...r,
+        isDiscovered: allUnlocked ? r.isDiscovered : false,
+        isResearched: allUnlocked ? r.isResearched : false,
+      };
+    }),
     alchemySlots: [
       { slotIndex: 0, recipeId: null, status: 'empty', turnsRemaining: 0 },
       { slotIndex: 1, recipeId: null, status: 'empty', turnsRemaining: 0 },
@@ -144,20 +153,25 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           }
         });
 
-        // Recipe discovery & ingredients migration
-        const recipes = (parsed.recipes || INITIAL_RECIPES).map((r: Recipe) => {
+        // Recipe discovery & ingredients migration:
+        // A recipe must ONLY be discovered or researched if ALL of its ingredients are in unlockedMaterials.
+        // If any ingredient is unobtained, the recipe must be locked (isDiscovered: false, isResearched: false).
+        // Also filter out any deleted recipes (e.g. removed stamina potions)
+        const recipes = (parsed.recipes || INITIAL_RECIPES)
+          .filter((r: Recipe) => INITIAL_RECIPES.some((ir) => ir.id === r.id))
+          .map((r: Recipe) => {
           const initR = INITIAL_RECIPES.find((ir) => ir.id === r.id);
-          const isDiscovered =
-            r.isDiscovered ??
-            r.isResearched ??
-            initR?.isDiscovered ??
-            r.ingredients.some((ing) => unlockedMaterials.includes(ing.itemId));
+          const ingredients = initR?.ingredients || r.ingredients;
+          const allUnlocked = ingredients.every((ing) =>
+            unlockedMaterials.includes(ing.itemId)
+          );
           return {
             ...r,
             resultCount: 1,
             timeDays: Math.max(1, r.timeDays || 1),
-            ingredients: initR?.ingredients || r.ingredients,
-            isDiscovered: Boolean(isDiscovered),
+            ingredients,
+            isDiscovered: allUnlocked ? Boolean(r.isDiscovered ?? initR?.isDiscovered ?? true) : false,
+            isResearched: allUnlocked ? Boolean(r.isResearched ?? initR?.isResearched) : false,
           };
         });
 
@@ -478,6 +492,10 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const researchRecipe = (recipeId: string): boolean => {
     const recipe = state.recipes.find((r) => r.id === recipeId);
     if (!recipe || recipe.isResearched) return false;
+    const allIngredientsUnlocked = recipe.ingredients.every((ing) =>
+      state.unlockedMaterials.includes(ing.itemId)
+    );
+    if (!allIngredientsUnlocked) return false;
     if (state.researchPoints < recipe.researchCostRp) return false;
 
     sound.playDiceSuccess();
@@ -897,11 +915,17 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
       }
 
-      // Check recipe discoveries for newly unlocked reward items
+      // Check recipe discoveries for newly unlocked reward items:
+      // A recipe is unlocked ONLY when ALL of its ingredients have been obtained.
       const nextRecipes = prev.recipes.map((recipe) => {
-        if (recipe.isDiscovered) return recipe;
-        const usesUnlocked = recipe.ingredients.some((ing) => newUnlocked.includes(ing.itemId));
-        return usesUnlocked ? { ...recipe, isDiscovered: true } : recipe;
+        const allUnlocked = recipe.ingredients.every((ing) => newUnlocked.includes(ing.itemId));
+        if (!allUnlocked) {
+          return { ...recipe, isDiscovered: false, isResearched: false };
+        }
+        if (!recipe.isDiscovered) {
+          return { ...recipe, isDiscovered: true };
+        }
+        return recipe;
       });
 
       return {
@@ -933,12 +957,16 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         nextShopStock[materialId] = FIELD_SHOP_ITEMS[materialId].baseStock + clearedCount * 2;
       }
 
-      // Discover recipes that use this material
+      // Discover recipes where ALL ingredients are now unlocked
       let newlyDiscoveredCount = 0;
       const nextRecipes = prev.recipes.map((recipe) => {
-        if (recipe.isDiscovered) return recipe;
-        const usesMaterial = recipe.ingredients.some((ing) => ing.itemId === materialId);
-        if (usesMaterial) {
+        const allUnlocked = recipe.ingredients.every((ing) => nextUnlocked.includes(ing.itemId));
+        if (!allUnlocked) {
+          return recipe.isDiscovered
+            ? { ...recipe, isDiscovered: false, isResearched: false }
+            : recipe;
+        }
+        if (!recipe.isDiscovered) {
           newlyDiscoveredCount++;
           return { ...recipe, isDiscovered: true };
         }

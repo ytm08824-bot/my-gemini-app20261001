@@ -69,9 +69,19 @@ export const AlchemyTab: React.FC = () => {
     }
   };
 
-  const researchedRecipes = state.recipes.filter((r) => r.isResearched);
-  const unresearchedRecipes = state.recipes.filter((r) => !r.isResearched && r.isDiscovered);
-  const undiscoveredCount = state.recipes.filter((r) => !r.isResearched && !r.isDiscovered).length;
+  const isRecipeMaterialUnlocked = (recipe: Recipe) => {
+    return recipe.ingredients.every((ing) => state.unlockedMaterials.includes(ing.itemId));
+  };
+
+  const researchedRecipes = state.recipes.filter(
+    (r) => r.isResearched && isRecipeMaterialUnlocked(r)
+  );
+  const unresearchedRecipes = state.recipes.filter(
+    (r) => !r.isResearched && r.isDiscovered && isRecipeMaterialUnlocked(r)
+  );
+  const undiscoveredCount = state.recipes.filter(
+    (r) => !r.isResearched && (!r.isDiscovered || !isRecipeMaterialUnlocked(r))
+  ).length;
 
   const filteredResearched = researchedRecipes.filter((r) =>
     filterCategory === 'all' ? true : r.category === filterCategory
@@ -81,19 +91,11 @@ export const AlchemyTab: React.FC = () => {
 
   // Render item effect / performance badge
   const renderItemEffectBadge = (item: Item) => {
-    if (item.id === 'stamina_tonic') {
-      return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 shrink-0">
-          <Zap className="w-2.5 h-2.5 fill-amber-500 text-amber-500" />
-          効果: 体力 +{item.effectValue || 15} 回復
-        </span>
-      );
-    }
     if (item.id === 'elixir_vital') {
       return (
         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-teal-700 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200 shrink-0">
           <Sparkles className="w-2.5 h-2.5 text-teal-600" />
-          効果: HP +60 & 体力 +20 回復
+          効果: HP +80 回復 (超高密度霊薬)
         </span>
       );
     }
